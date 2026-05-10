@@ -1,0 +1,23 @@
+# Cloudflare Workers
+api/.wrangler/
+api/.dev.vars
+api/node_modules/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets — never commit
+*.env
+.env*
+api-key.txt
+
+# Build artefacts (none expected for vanilla JS, but defensive)
+dist/
+build/
+node_modules/

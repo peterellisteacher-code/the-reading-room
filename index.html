@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>The Reading Room</title>
+  <meta name="description" content="A 50-minute Year 12 Philosophy game on Martha Nussbaum's claim that emotions are a way of knowing." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header role="banner">
+      <div class="header-row">
+        <h1>The Reading Room</h1>
+        <nav id="round-tracker" aria-label="Progress through rounds">
+          <span class="round-pip" data-round="1" aria-label="Round 1">1</span>
+          <span class="round-pip" data-round="2" aria-label="Round 2">2</span>
+          <span class="round-pip" data-round="3" aria-label="Round 3">3</span>
+          <span class="round-pip" data-round="4" aria-label="Round 4">4</span>
+        </nav>
+      </div>
+    </header>
+
+    <main id="screen" role="main" tabindex="-1">
+      <!-- Dynamically rendered. Initial render happens after main.js loads. -->
+      <p class="loading">Loading…</p>
+    </main>
+
+    <footer>
+      <button id="btn-restart" type="button">Restart</button>
+      <button id="btn-help" type="button">How it works</button>
+    </footer>
+
+    <!-- Live regions for screen readers -->
+    <div id="status" role="status" aria-live="polite" class="visually-hidden"></div>
+    <div id="alert" role="alert" aria-live="assertive" class="visually-hidden"></div>
+
+    <!-- Help modal -->
+    <dialog id="help-modal" aria-labelledby="help-title">
+      <h2 id="help-title">How The Reading Room works</h2>
+      <p>You'll work through four short rounds. Each one shows you something a person has said or written — a radio interview, a few text messages, an email, a chat with a teacher.</p>
+      <p>Your job is to read it carefully and tell Iris (your companion in the game) what you think is actually going on with that person.</p>
+      <p>Iris is going to push back gently if you say things the text doesn't actually show. That's the whole point of the game — we're practising paying close attention to what's really there.</p>
+      <p>The last round has a twist. Watch out for it.</p>
+      <p>You can restart at any time. There's no winning or losing — your reflection at the end is the artefact.</p>
+      <form method="dialog">
+        <button type="submit" autofocus>Got it</button>
+      </form>
+    </dialog>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="data/scenarios.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>

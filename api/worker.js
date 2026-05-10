@@ -31,6 +31,11 @@ const ANTHROPIC_MODEL = 'claude-haiku-4-5';
 const ANTHROPIC_MAX_TOKENS = 250;
 
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
+// Cheapest DeepSeek tier. `deepseek-chat` is the V4-Flash routing on the
+// direct API ($0.14 in / $0.28 out per MTok). Cache hits drop input to
+// ~$0.014/MTok automatically, which dominates after turn 1. The only other
+// model is `deepseek-reasoner` which is roughly 2× the price and a reasoning
+// model — not needed for a structured persona-with-rubric task like Plato.
 const DEEPSEEK_MODEL = 'deepseek-chat';
 const DEEPSEEK_MAX_TOKENS = 350;
 

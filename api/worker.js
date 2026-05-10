@@ -45,6 +45,7 @@ const MAX_PLATO_HISTORY = 10; // 5 student + 5 plato turns
 // CORS — restrict to known origins. Add your Pages/Netlify origin here.
 const ALLOWED_ORIGINS = [
   'https://peterellisteacher-code.github.io',
+  'https://the-reading-room-philosophy.netlify.app',
   'http://localhost:8000',
   'http://127.0.0.1:8000',
   'http://localhost:8765',

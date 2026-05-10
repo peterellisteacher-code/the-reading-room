@@ -16,23 +16,58 @@
   const CONFIG = window.READING_ROOM_CONFIG;
   const SCENARIOS = window.SCENARIOS;
   const ROUND_SEQUENCE = window.ROUND_SEQUENCE;
+  const PLATO_LEVELS = window.PLATO_LEVELS;
+  const PLATO_CONCEDE_TEXT = window.PLATO_CONCEDE_TEXT;
+  const PLATO_MAX_TURNS_PER_LEVEL = window.PLATO_MAX_TURNS_PER_LEVEL;
+
+  const IRIS_URL = `${CONFIG.API_BASE_URL}/iris`;
+  const PLATO_URL = `${CONFIG.API_BASE_URL}/plato`;
 
   // ----- State -----
   const state = {
-    screen: 'title', // 'title' | 'intro' | 'reveal' | 'priming' | 'reading' | 'response' | 'thinking' | 'feedback' | 'reflection'
+    // 'title' | 'intro' | 'reveal' | 'priming' | 'reading' | 'response' |
+    // 'thinking' | 'feedback' | 'plato_intro' | 'plato_dialogue' |
+    // 'plato_thinking' | 'plato_concede' | 'reflection'
+    screen: 'title',
     roundIdx: 0,
     studentResponse: '',
     feedback: null, // { evidenceCheck: 'PASS'|'FAIL'|'UNKNOWN', text, fromFallback }
     log: [], // [{ round, scenario, response, evidenceCheck, irisText, fromFallback }]
     apiHealthy: true,
+
+    // Plato state (active when screen is plato_*)
+    plato: {
+      currentLevel: 1, // 1-5
+      turnAtLevel: 0, // increments every student submission at this level
+      transcript: [], // [{ role: 'plato'|'student', content: string, levelPassed?, hint? }]
+      pendingResponse: '', // student's current text
+      conceded: false,
+      lastResponse: null, // most recent Plato JSON for rendering feedback
+    },
   };
 
   // ----- Constants -----
-  const FALLBACK_MESSAGES = [
-    "I noticed you took your time with that — good. There's something in the way they're hesitating that's worth coming back to. Think about who they're protecting in how they're talking. We'll keep going.",
-    "Reading that closely is the whole point. Notice how much of what you said came from specific words they used — that's the work. Onward.",
-    "There's a lot in what you wrote. The thing I'd flag for next round is whether your read came from the text itself or from a story you brought in. Both happen — paying attention to which is which is the skill we're building.",
-  ];
+  // Per-scenario fallback messages — used when the Iris proxy is unreachable.
+  // Stress-tester noted that the random 3-message rotation made two rounds
+  // look identical when fallbacks fired. Per-scenario fallbacks give the
+  // student something specific to think about even offline.
+  const FALLBACK_MESSAGES = {
+    s1_katie: "I'm offline right now, but here's what I'd be pointing at: Katie self-corrects 'my graduation' to 'my older brother's graduation', and she says there isn't a version of this where she sits down and says it's too much. Those two moments are the whole interview. We'll keep going.",
+    s2_jay: "I'm offline right now — but the move I'd want you to chase is the unsent third message: 'i was just'. Whatever Jay tried to say there is what this whole exchange is about. The Saturday plan is the asking-without-asking. Onward.",
+    s3_email: "I'm offline right now — but the thing to notice in Mr Doan's email is how much apologising he's doing for a small request, and how much groundwork he's already done before asking. He's making it as easy as possible to say yes. That's the data. Onward.",
+    s4_hijack: "I'm offline — but this one matters. The heads-up before you read about Sam was misleading. Their words are not exaggerated; they're the opposite — pre-emptive self-dismissal. 'You'll think it's nothing.' 'Probably a waste of your time.' Test your read against what they actually said.",
+    _generic: "I'm offline right now. Hold what you wrote. The teacher will pick this up with you in the debrief — your specific words about specific moments in the text are what matters.",
+  };
+
+  // Plato fallback when DeepSeek is offline. Keeps the game playable for the
+  // 50-min window even if the proxy is down — but flags clearly to the student.
+  const PLATO_FALLBACKS = {
+    1: { plato: "I cannot hear you clearly. Tell me which of the four readings showed you something feeling alone could see.", hint: "Name a person — Katie, Jay, Mr Doan, or Sam." },
+    2: { plato: "I cannot hear you clearly. Quote me actual words from one of the readings.", hint: "Find a phrase from the text. Use their words, not yours." },
+    3: { plato: "I cannot hear you clearly. Under what condition does feeling reach the truth?", hint: "What was different about round 4 from rounds 1-3?" },
+    4: { plato: "I cannot hear you clearly. Compare a feeling that knew with a feeling that hijacked.", hint: "Round 4 vs one of the earlier rounds." },
+    5: { plato: "I cannot hear you clearly. State your position. When does feeling beat reasoning?", hint: "Use the word 'because'. Take a stance." },
+  };
 
   // ----- Element refs -----
   const screen = document.getElementById('screen');
@@ -89,13 +124,64 @@
         state.studentResponse = '';
         state.feedback = null;
         if (state.roundIdx >= ROUND_SEQUENCE.length) {
-          state.screen = 'reflection';
+          // After the four reading rounds → Plato challenge, not reflection yet.
+          state.screen = 'plato_intro';
         } else {
           // Show the round-reveal card for every round (gives a beat between scenes).
           state.screen = 'reveal';
         }
         break;
       }
+      case 'BEGIN_PLATO':
+        state.screen = 'plato_dialogue';
+        // Seed transcript with Plato's opening objection at level 1
+        if (state.plato.transcript.length === 0) {
+          state.plato.transcript.push({
+            role: 'plato',
+            content: PLATO_LEVELS[0].plato_opens,
+          });
+        }
+        break;
+      case 'UPDATE_PLATO_RESPONSE':
+        state.plato.pendingResponse = action.value.slice(0, CONFIG.MAX_RESPONSE_CHARS);
+        break;
+      case 'SUBMIT_PLATO_TURN':
+        state.screen = 'plato_thinking';
+        // Push the student turn into the transcript immediately so they see it
+        state.plato.transcript.push({
+          role: 'student',
+          content: state.plato.pendingResponse,
+        });
+        state.plato.turnAtLevel += 1;
+        state.plato.pendingResponse = '';
+        break;
+      case 'PLATO_RESPONSE_RECEIVED': {
+        const r = action.response; // { level_passed, next_level, plato_says, hint, fromFallback }
+        state.plato.lastResponse = r;
+        // Append Plato's response to the transcript
+        state.plato.transcript.push({
+          role: 'plato',
+          content: r.plato_says,
+          levelPassed: r.level_passed,
+          hint: r.hint,
+          fromFallback: r.fromFallback,
+        });
+        if (r.next_level === 'concede') {
+          state.plato.conceded = true;
+          state.screen = 'plato_concede';
+        } else {
+          // Advance level if changed
+          if (typeof r.next_level === 'number' && r.next_level !== state.plato.currentLevel) {
+            state.plato.currentLevel = r.next_level;
+            state.plato.turnAtLevel = 0;
+          }
+          state.screen = 'plato_dialogue';
+        }
+        break;
+      }
+      case 'GO_TO_REFLECTION':
+        state.screen = 'reflection';
+        break;
       case 'RESTART':
         state.screen = 'title';
         state.roundIdx = 0;
@@ -103,6 +189,14 @@
         state.feedback = null;
         state.log = [];
         state.apiHealthy = true;
+        state.plato = {
+          currentLevel: 1,
+          turnAtLevel: 0,
+          transcript: [],
+          pendingResponse: '',
+          conceded: false,
+          lastResponse: null,
+        };
         break;
       case 'API_DOWN':
         state.apiHealthy = false;
@@ -141,11 +235,31 @@
   function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
   function updateRoundTracker() {
-    const currentRound = ROUND_SEQUENCE[state.roundIdx]?.round ?? 0;
+    // Pips 1-4 = reading rounds; pip 5 = Plato challenge.
+    let currentRound;
+    let allReadingRoundsDone;
+    if (state.screen.startsWith('plato_') || state.screen === 'reflection') {
+      currentRound = 5;
+      allReadingRoundsDone = true;
+    } else {
+      currentRound = ROUND_SEQUENCE[state.roundIdx]?.round ?? 0;
+      allReadingRoundsDone = false;
+    }
+    const platoDone = state.screen === 'reflection' && state.plato.conceded;
     document.querySelectorAll('.round-pip').forEach((pip) => {
       const r = Number(pip.dataset.round);
-      pip.classList.toggle('active', r === currentRound);
-      pip.classList.toggle('done', r < currentRound);
+      const isPlato = r === 5;
+      let active = false;
+      let done = false;
+      if (isPlato) {
+        active = state.screen.startsWith('plato_');
+        done = platoDone;
+      } else {
+        active = r === currentRound && !allReadingRoundsDone;
+        done = r < currentRound || allReadingRoundsDone;
+      }
+      pip.classList.toggle('active', active);
+      pip.classList.toggle('done', done);
     });
   }
 
@@ -328,6 +442,13 @@
         alertNow('Write something first — even a sentence.');
         return;
       }
+      // 40-word minimum gate — added after stress-test showed students
+      // submitting 10-word responses and finishing in 17 min.
+      const wordCount = text.trim().split(/\s+/).length;
+      if (wordCount < CONFIG.MIN_RESPONSE_WORDS) {
+        alertNow(`Iris needs more to work with — write at least ${CONFIG.MIN_RESPONSE_WORDS} words. You're at ${wordCount}.`);
+        return;
+      }
       // Persist directly (no extra render), then transition via dispatch.
       state.studentResponse = text;
       dispatch({ type: 'SUBMIT_RESPONSE' });
@@ -430,6 +551,200 @@
     );
   }
 
+  // ----- Plato screens -----
+
+  function renderPlatoIntro() {
+    return el(
+      'section',
+      { class: 'card plato-intro-card' },
+      el('div', { class: 'round-label plato-label' }, 'The fifth presence'),
+      el('h2', null, 'Plato has been listening.'),
+      el('p', null,
+        "Iris was warm. Plato is not. He's been watching the four rounds and he is unconvinced that what you did was knowing — feeling, yes, but knowing, no."
+      ),
+      el('p', null,
+        "He's offered to talk with you about it. He says he'll concede the point — formally — if you can defend it across ", el('em', null, 'five levels of objection'), ". You don't see the levels in advance; you'll feel them as he raises them."
+      ),
+      el('p', { class: 'aside' },
+        "Read closely. Use specific words from the four readings. Don't hedge. He won't concede to 'sometimes' or 'it depends'."
+      ),
+      el(
+        'div',
+        { class: 'button-row' },
+        el(
+          'button',
+          { type: 'button', class: 'primary plato-primary', onClick: () => dispatch({ type: 'BEGIN_PLATO' }) },
+          'Enter the dialogue'
+        )
+      )
+    );
+  }
+
+  function renderPlatoDialogue() {
+    const currentLevel = state.plato.currentLevel;
+    const turnAtLevel = state.plato.turnAtLevel;
+    const responseRef = { current: null };
+    const charCountRef = { current: null };
+    const wordCountRef = { current: null };
+
+    const updateCounts = () => {
+      const v = responseRef.current?.value || '';
+      const len = v.length;
+      const words = v.trim() ? v.trim().split(/\s+/).length : 0;
+      if (charCountRef.current) {
+        charCountRef.current.textContent = `${len} / ${CONFIG.MAX_RESPONSE_CHARS}`;
+        charCountRef.current.classList.toggle('over', len >= CONFIG.MAX_RESPONSE_CHARS);
+      }
+      if (wordCountRef.current) {
+        wordCountRef.current.textContent = `${words} words`;
+        wordCountRef.current.classList.toggle('ok', words >= 20);
+      }
+    };
+
+    const onSubmit = (e) => {
+      e.preventDefault();
+      const text = (responseRef.current?.value || '').slice(0, CONFIG.MAX_RESPONSE_CHARS);
+      if (!text.trim()) {
+        alertNow('Plato needs an actual response.');
+        return;
+      }
+      // Plato accepts shorter responses than Iris (terse philosophical
+      // moves are fine) — keep the gate light, just enforce non-empty.
+      state.plato.pendingResponse = text;
+      dispatch({ type: 'SUBMIT_PLATO_TURN' });
+      requestPlato();
+    };
+
+    // Build the level indicator (1-5 pips, with current level highlighted)
+    const levelPips = el(
+      'div',
+      { class: 'plato-level-tracker', 'aria-label': 'Plato level progress' },
+      ...PLATO_LEVELS.map((lvl) =>
+        el('span',
+          {
+            class: 'plato-pip' + (lvl.level < currentLevel ? ' done' : lvl.level === currentLevel ? ' active' : ''),
+            'aria-label': `Level ${lvl.level}`,
+          },
+          String(lvl.level)
+        )
+      )
+    );
+
+    // Render transcript — Plato and student turns alternating.
+    const transcriptEl = el('div', { class: 'plato-transcript', 'aria-label': 'Dialogue so far' },
+      ...state.plato.transcript.map((turn, idx) => {
+        if (turn.role === 'plato') {
+          const isLast = idx === state.plato.transcript.length - 1;
+          const passClass = isLast && turn.levelPassed === true ? 'plato-passed' :
+                            isLast && turn.levelPassed === false ? 'plato-failed' : '';
+          return el('div', { class: `plato-turn plato-says ${passClass}` },
+            el('div', { class: 'plato-speaker' }, 'PLATO'),
+            el('p', { class: 'plato-text' }, turn.content),
+            turn.hint ? el('p', { class: 'plato-hint' },
+              el('span', { class: 'plato-hint-label' }, 'Hint: '),
+              turn.hint
+            ) : null,
+            turn.fromFallback ? el('p', { class: 'aside small' }, '(Plato is offline — the proxy is unreachable. The teacher will pick this up in the debrief.)') : null,
+          );
+        } else {
+          return el('div', { class: 'plato-turn plato-student' },
+            el('div', { class: 'plato-speaker' }, 'YOU'),
+            el('p', { class: 'plato-text' }, turn.content),
+          );
+        }
+      })
+    );
+
+    const wordCountBox = (function () {
+      const w = el('span', { class: 'plato-word-count' }, '0 words');
+      wordCountRef.current = w;
+      return w;
+    })();
+
+    const charCountBox = (function () {
+      const c = el('span', { class: 'char-count' }, `0 / ${CONFIG.MAX_RESPONSE_CHARS}`);
+      charCountRef.current = c;
+      return c;
+    })();
+
+    const formBlock = el('form', { class: 'plato-response-form', onSubmit },
+      el('label', { for: 'plato-response', class: 'plato-input-label' },
+        `Level ${currentLevel} of 5${turnAtLevel >= PLATO_MAX_TURNS_PER_LEVEL ? ' (final attempt at this level)' : ''}`
+      ),
+      (function () {
+        const ta = el('textarea', {
+          id: 'plato-response',
+          rows: 5,
+          'aria-label': 'Your reply to Plato',
+          placeholder: "Answer him. Use specific words from the readings. Don't hedge.",
+          onInput: updateCounts,
+          maxlength: String(CONFIG.MAX_RESPONSE_CHARS),
+        });
+        ta.value = state.plato.pendingResponse || '';
+        responseRef.current = ta;
+        return ta;
+      })(),
+      el('div', { class: 'plato-counts-row' }, wordCountBox, charCountBox),
+      el('div', { class: 'button-row' },
+        el('button', { type: 'submit', class: 'primary plato-primary' }, 'Reply to Plato')
+      ),
+    );
+
+    setTimeout(() => {
+      if (responseRef.current) {
+        responseRef.current.focus();
+        updateCounts();
+      }
+      // Scroll transcript to bottom so latest turn is in view
+      if (transcriptEl.scrollHeight > 0) {
+        transcriptEl.scrollTop = transcriptEl.scrollHeight;
+      }
+    }, 0);
+
+    return el(
+      'section',
+      { class: 'card plato-dialogue-card' },
+      el('div', { class: 'round-label plato-label' }, 'Plato'),
+      levelPips,
+      transcriptEl,
+      formBlock,
+    );
+  }
+
+  function renderPlatoThinking() {
+    return el(
+      'section',
+      { class: 'card thinking-card plato-thinking-card' },
+      el('div', { class: 'plato-avatar', 'aria-hidden': 'true' }, 'Π'),
+      el('p', { class: 'plato-speaker' }, 'PLATO'),
+      el('p', { class: 'thinking-text' }, 'considers your reply…'),
+      el('div', { class: 'thinking-dots', 'aria-hidden': 'true' }, '· · ·')
+    );
+  }
+
+  function renderPlatoConcede() {
+    return el(
+      'section',
+      { class: 'card plato-concede-card' },
+      el('div', { class: 'round-label plato-label' }, 'Plato concedes'),
+      el('h2', null, 'You earned it.'),
+      el('div', { class: 'iris-block plato-concede-text' },
+        el('p', { class: 'plato-speaker' }, 'PLATO'),
+        el('p', { class: 'iris-text' }, PLATO_CONCEDE_TEXT),
+      ),
+      el('p', null, "Step through to your reflection."),
+      el(
+        'div',
+        { class: 'button-row' },
+        el(
+          'button',
+          { type: 'button', class: 'primary', onClick: () => dispatch({ type: 'GO_TO_REFLECTION' }) },
+          'Reflection'
+        )
+      )
+    );
+  }
+
   function renderReflection() {
     const passes = state.log.filter((l) => l.evidenceCheck === 'PASS').length;
     const total = state.log.length;
@@ -482,8 +797,28 @@
         "These two thinkers — Nussbaum and Siegel — frame the rest of Week 2."
       ),
 
-      el('h3', null, 'Your transcript'),
+      el('h3', null, 'Your transcript with Iris'),
       reflectionList,
+
+      // ----- Plato section -----
+      state.plato.transcript.length > 0
+        ? el('div', null,
+            el('h3', null, state.plato.conceded ? 'Your dialogue with Plato' : 'Where you reached with Plato'),
+            el('p', null,
+              state.plato.conceded
+                ? "Plato conceded after five levels. That doesn't mean you won an argument — it means you held a position long enough to defend it. The dialogue itself is the artefact. Re-read your own moves below."
+                : `You reached level ${state.plato.currentLevel} of 5. Plato didn't concede tonight — that's normal. The class debrief is the right place to pick this up.`
+            ),
+            el('ul', { class: 'plato-transcript-print log-list' },
+              ...state.plato.transcript.map((turn) => el('li',
+                { class: `log-entry plato-${turn.role}` },
+                el('div', { class: 'log-round plato-speaker' }, turn.role === 'plato' ? 'PLATO' : 'YOU'),
+                el('div', { class: 'log-iris' }, turn.content),
+                turn.hint ? el('div', { class: 'log-iris plato-hint' }, `Hint: ${turn.hint}`) : null,
+              ))
+            )
+          )
+        : null,
 
       el(
         'div',
@@ -517,6 +852,10 @@
       case 'response': node = renderResponse(); break;
       case 'thinking': node = renderThinking(); break;
       case 'feedback': node = renderFeedback(); break;
+      case 'plato_intro': node = renderPlatoIntro(); break;
+      case 'plato_dialogue': node = renderPlatoDialogue(); break;
+      case 'plato_thinking': node = renderPlatoThinking(); break;
+      case 'plato_concede': node = renderPlatoConcede(); break;
       case 'reflection': node = renderReflection(); break;
       default:
         node = el('p', null, 'Something went wrong. Restart, please.');
@@ -530,6 +869,10 @@
     // Announce screen change politely
     if (state.screen === 'thinking') announce('Iris is thinking');
     else if (state.screen === 'feedback') announce(`Round ${ROUND_SEQUENCE[state.roundIdx].round} feedback`);
+    else if (state.screen === 'plato_intro') announce('Plato challenge — five levels');
+    else if (state.screen === 'plato_thinking') announce('Plato considers your reply');
+    else if (state.screen === 'plato_dialogue') announce(`Plato level ${state.plato.currentLevel} of 5`);
+    else if (state.screen === 'plato_concede') announce('Plato concedes');
     else if (state.screen === 'reflection') announce('Reflection screen — workshop complete');
   }
 
@@ -546,7 +889,7 @@
     try {
       const ctrl = new AbortController();
       const timeout = setTimeout(() => ctrl.abort(), CONFIG.API_TIMEOUT_MS);
-      const res = await fetch(CONFIG.API_PROXY_URL, {
+      const res = await fetch(IRIS_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload),
@@ -560,7 +903,7 @@
       dispatch({ type: 'FEEDBACK_RECEIVED', feedback: { ...parsed, fromFallback: false } });
     } catch (err) {
       console.warn('Iris call failed, using fallback:', err);
-      const fallbackText = FALLBACK_MESSAGES[Math.floor(Math.random() * FALLBACK_MESSAGES.length)];
+      const fallbackText = FALLBACK_MESSAGES[round.scenario] || FALLBACK_MESSAGES._generic;
       dispatch({
         type: 'FEEDBACK_RECEIVED',
         feedback: { evidenceCheck: 'UNKNOWN', text: fallbackText, fromFallback: true },
@@ -577,12 +920,64 @@
     const match = text.match(/^\s*\[EVIDENCE_CHECK_(PASS|FAIL)\]\s*\n+([\s\S]*)$/);
     if (!match) {
       console.warn('Missing evidence-check marker. Raw text:', text);
-      return { evidenceCheck: 'UNKNOWN', text: text.trim() || FALLBACK_MESSAGES[0] };
+      return { evidenceCheck: 'UNKNOWN', text: text.trim() || FALLBACK_MESSAGES._generic };
     }
     return {
       evidenceCheck: match[1],
       text: match[2].trim(),
     };
+  }
+
+  // ----- Plato API call -----
+  async function requestPlato() {
+    const currentLevel = state.plato.currentLevel;
+    const payload = {
+      current_level: currentLevel,
+      turn_number_at_this_level: state.plato.turnAtLevel,
+      student_response: state.plato.transcript[state.plato.transcript.length - 1].content,
+      history_so_far: state.plato.transcript.slice(0, -1).map((t) => ({
+        role: t.role,
+        content: t.content,
+      })),
+    };
+
+    try {
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), CONFIG.API_TIMEOUT_MS);
+      const res = await fetch(PLATO_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: ctrl.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) throw new Error('Proxy returned ' + res.status);
+      const data = await res.json();
+      dispatch({
+        type: 'PLATO_RESPONSE_RECEIVED',
+        response: {
+          level_passed: !!data.level_passed,
+          next_level: data.next_level,
+          plato_says: data.plato_says || '',
+          hint: data.hint || '',
+          fromFallback: false,
+        },
+      });
+    } catch (err) {
+      console.warn('Plato call failed, using fallback:', err);
+      const fb = PLATO_FALLBACKS[currentLevel] || PLATO_FALLBACKS[1];
+      dispatch({
+        type: 'PLATO_RESPONSE_RECEIVED',
+        response: {
+          level_passed: false,
+          next_level: currentLevel,
+          plato_says: fb.plato,
+          hint: fb.hint,
+          fromFallback: true,
+        },
+      });
+    }
   }
 
   // ----- Static button handlers -----

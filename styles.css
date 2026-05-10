@@ -520,3 +520,260 @@ dialog p {
   header h1 { font-size: 1.6rem; }
   .card h2 { font-size: 1.8rem; }
 }
+
+/* ========================================================================
+   PLATO — cold marble counterpart to Iris's warmth.
+   Slate accent, condensed serif for headings, no warmth_soft, narrower
+   left bar on his speech blocks. Same paper background — same room,
+   different presence.
+   ======================================================================== */
+
+:root {
+  --plato-cold: #3b4a5e;        /* slate */
+  --plato-cold-deep: #25314a;
+  --plato-marble: #ecebe6;       /* pale stone */
+  --plato-marble-shadow: #d8d6cf;
+}
+
+.plato-final-pip {
+  font-family: 'Times New Roman', 'Palatino', serif;
+  font-style: italic;
+  background: transparent;
+  border-color: var(--plato-cold);
+  color: var(--plato-cold);
+}
+.plato-final-pip.active {
+  background: var(--plato-cold);
+  color: var(--paper);
+  border-color: var(--plato-cold);
+}
+.plato-final-pip.done {
+  background: var(--plato-cold-deep);
+  color: var(--paper);
+  border-color: var(--plato-cold-deep);
+}
+
+.plato-label {
+  color: var(--plato-cold) !important;
+  letter-spacing: 0.1em;
+}
+
+button.plato-primary {
+  background: var(--plato-cold);
+  border-color: var(--plato-cold);
+  color: var(--paper);
+}
+button.plato-primary:hover {
+  background: var(--plato-cold-deep);
+  border-color: var(--plato-cold-deep);
+}
+
+/* ---- Plato intro card ---- */
+.plato-intro-card,
+.plato-concede-card {
+  background: var(--plato-marble);
+  border-left: 4px solid var(--plato-cold);
+}
+
+.plato-intro-card h2,
+.plato-concede-card h2 {
+  font-family: 'Times New Roman', 'Palatino', serif;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* ---- Plato dialogue card ---- */
+.plato-dialogue-card {
+  background: var(--plato-marble);
+  border-left: 4px solid var(--plato-cold);
+  gap: 1rem;
+}
+
+.plato-level-tracker {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+
+.plato-pip {
+  font-family: 'Times New Roman', 'Palatino', serif;
+  font-style: italic;
+  font-size: 0.85rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--plato-cold);
+  color: var(--plato-cold);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+.plato-pip.active {
+  background: var(--plato-cold);
+  color: var(--paper);
+}
+.plato-pip.done {
+  background: var(--plato-cold-deep);
+  color: var(--paper);
+  border-color: var(--plato-cold-deep);
+}
+
+.plato-transcript {
+  max-height: 28rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding-right: 0.4rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--plato-cold) transparent;
+}
+
+.plato-turn {
+  padding: 0.7rem 1rem;
+  border-radius: 4px;
+  background: #fff;
+  border-left: 3px solid var(--plato-marble-shadow);
+}
+
+.plato-turn.plato-says {
+  background: #fdfdfa;
+  border-left-color: var(--plato-cold);
+}
+
+.plato-turn.plato-student {
+  background: #fdfaf3;
+  border-left-color: var(--warmth-soft);
+}
+
+.plato-turn.plato-passed { box-shadow: 0 1px 0 var(--pass) inset; }
+.plato-turn.plato-failed { box-shadow: 0 1px 0 var(--plato-cold) inset; }
+
+.plato-speaker {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--plato-cold);
+  margin: 0 0 0.3rem 0;
+}
+
+.plato-turn.plato-student .plato-speaker {
+  color: var(--warmth);
+}
+
+.plato-text {
+  font-family: var(--serif);
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--ink);
+  margin: 0;
+}
+
+.plato-hint {
+  font-family: var(--serif);
+  font-size: 0.92rem;
+  font-style: italic;
+  color: var(--plato-cold-deep);
+  margin: 0.4rem 0 0 0;
+  padding-top: 0.4rem;
+  border-top: 1px dashed var(--plato-marble-shadow);
+}
+
+.plato-hint-label {
+  font-family: var(--sans);
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+/* ---- Plato response form ---- */
+.plato-response-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.plato-input-label {
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--plato-cold);
+}
+
+#plato-response {
+  width: 100%;
+  font-family: var(--serif);
+  font-size: 1rem;
+  line-height: 1.55;
+  background: #fdfdfa;
+  color: var(--ink);
+  border: 1px solid var(--plato-marble-shadow);
+  border-radius: var(--radius);
+  padding: 0.8rem;
+  resize: vertical;
+  min-height: 6rem;
+}
+
+#plato-response:focus-visible {
+  outline: 2px solid var(--plato-cold);
+  outline-offset: 1px;
+  border-color: var(--plato-cold);
+}
+
+.plato-counts-row {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}
+
+.plato-word-count.ok { color: var(--pass); }
+
+/* ---- Plato thinking ---- */
+.plato-thinking-card {
+  background: var(--plato-marble);
+  border-left: 4px solid var(--plato-cold);
+}
+
+.plato-avatar {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  background: var(--plato-cold);
+  color: var(--paper);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  font-family: 'Times New Roman', 'Palatino', serif;
+  font-style: italic;
+}
+
+.plato-thinking-card .thinking-dots { color: var(--plato-cold); }
+
+/* ---- Plato concede ---- */
+.plato-concede-text {
+  background: #fdfdfa;
+  border-left-color: var(--plato-cold) !important;
+}
+
+/* ---- Reflection: Plato transcript print ---- */
+.plato-transcript-print { margin: 0.6rem 0; }
+.log-entry.plato-plato { border-left-color: var(--plato-cold); }
+.log-entry.plato-student { border-left-color: var(--warmth-soft); }
+
+/* ---- Print: include Plato dialogue ---- */
+@media print {
+  .plato-transcript, .plato-response-form, .plato-level-tracker { display: none; }
+  .plato-intro-card, .plato-dialogue-card, .plato-thinking-card, .plato-concede-card {
+    background: white;
+    border-left: 2px solid var(--plato-cold);
+  }
+}

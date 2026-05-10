@@ -105,3 +105,46 @@ window.ROUND_SEQUENCE = [
   { round: 3, scenario: 's3_email', mode: 'engaged', minimal_label: 'Round 3' },
   { round: 4, scenario: 's4_hijack', mode: 'hijacked', minimal_label: 'Round 4' }
 ];
+
+// =========================================================================
+// PLATO CHALLENGE — five levels of escalating defence (1001-Nights pattern,
+// Sun et al. 2023). Pedagogy: convince Plato that emotion can be a route to
+// knowledge; he concedes only when each rubric is met.
+//
+// The student does NOT see these rubric descriptions in the UI. They see only
+// Plato's opening objection per level + his hints if they fail. The rubrics
+// live in the Worker's PLATO_SYSTEM_PROMPT — these are reproduced here for
+// the frontend to display the round label, opening line, and progress UI.
+// =========================================================================
+window.PLATO_LEVELS = [
+  {
+    level: 1,
+    label: 'Level 1 — name the work',
+    plato_opens: 'You spent an hour with four readings tonight. I find this claim — that feeling can know — too vague to attack. Sharpen it. Tell me which of those four readings showed you something feeling alone could see.',
+  },
+  {
+    level: 2,
+    label: 'Level 2 — cite the words',
+    plato_opens: 'Naming a person is cheap. Anyone can name a name. Show me the actual words — the exact phrase — that taught you something. What did Katie say? What did Jay type? What did Mr Doan write?',
+  },
+  {
+    level: 3,
+    label: 'Level 3 — when does feeling reach truth?',
+    plato_opens: 'Granted — feeling found a true thing in those words. But your fourth round showed feeling can betray you. So feeling sometimes finds and sometimes betrays. Tell me: under what condition does feeling reach the truth?',
+  },
+  {
+    level: 4,
+    label: 'Level 4 — trained vs hijacked',
+    plato_opens: 'You speak of training the feeling, like a horseman trains a horse. But the horse still bolts. Show me, using your readings, the difference between a feeling that knew and a feeling that hijacked. Compare them.',
+  },
+  {
+    level: 5,
+    label: 'Level 5 — defended position',
+    plato_opens: 'Then state your position clearly. When does feeling beat reasoning, and what makes you sure it does in that case? Defend yourself, philosopher. I will concede only to a position you actually hold.',
+  },
+];
+
+window.PLATO_CONCEDE_TEXT = 'Hmph. You have learned to read what is there. Aristotle was your teacher more than I was today. Go to your reflection — but do not forget: even a trained eye can be deceived if it stops looking. Now leave me to my dialogues.';
+
+// Maximum turns per level before Plato softens. Mirrors the Worker's behaviour.
+window.PLATO_MAX_TURNS_PER_LEVEL = 8;

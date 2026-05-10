@@ -5,10 +5,12 @@
 // the site goes live. The Worker holds the key as a Workers Secret.
 
 window.READING_ROOM_CONFIG = {
-  // Set this to your deployed Cloudflare Worker URL. While developing locally
-  // before deploying, the game still runs — it just shows the offline-fallback
-  // message for Iris's responses.
-  API_PROXY_URL: 'https://reading-room-proxy.peterellisteacher-code.workers.dev/iris',
+  // Base URL of the Cloudflare Worker. The Worker dispatches by path:
+  //   /iris   → Anthropic Haiku, the warm scaffolder for rounds 1-4
+  //   /plato  → DeepSeek V4, the cold gatekeeper for the final challenge
+  // While developing locally before deploying, the game still runs — Iris
+  // and Plato both show offline-fallback messages.
+  API_BASE_URL: 'https://reading-room-proxy.peterellisteacher-code.workers.dev',
 
   // If true, the game shows a banner explaining offline mode when no Worker
   // is reachable. If false, it silently uses fallback messages.
@@ -16,6 +18,11 @@ window.READING_ROOM_CONFIG = {
 
   // Maximum characters the student can submit per turn. Worker also enforces.
   MAX_RESPONSE_CHARS: 1000,
+
+  // Minimum words required before submit unlocks. Per stress-test
+  // recommendation — without this, students submit 10-word responses
+  // and finish the game in 17 min.
+  MIN_RESPONSE_WORDS: 40,
 
   // Per-turn API timeout. After this, fall back to canned message.
   API_TIMEOUT_MS: 15000,

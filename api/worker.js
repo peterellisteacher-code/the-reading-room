@@ -368,7 +368,10 @@ async function handleIris(body, env, origin) {
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
     console.error('Anthropic non-2xx', res.status, errText);
-    return jsonResponse({ error: 'Upstream error', status: res.status }, 502, origin);
+    if (res.status === 401 || res.status === 403) {
+      return jsonResponse({ error: 'AI service credentials error — please contact the site owner.' }, 503, origin);
+    }
+    return jsonResponse({ error: 'Upstream error' }, 502, origin);
   }
 
   const data = await res.json();

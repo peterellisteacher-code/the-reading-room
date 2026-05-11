@@ -173,6 +173,8 @@ def build_teacher_notes():
     body(doc, "Three things that almost always work: (1) 'Read it again, slower.' (2) 'Point at one specific line that made you think that.' (3) 'What word did they use? Why that word?'")
     h3(doc, 'Round 4 — students are angry about the priming line')
     body(doc, "Good. That's the lesson. The whole point is they were given a misleading prior and had to read past it. The Siegel hijack is real — once we expect a story, our perception conforms to it. Lean into the discomfort.")
+    h3(doc, 'Plato is stuck / offline')
+    body(doc, "If DeepSeek is unreachable, Plato's fallback dialogue fires — he says he can't hear them and gives a level-appropriate hint, but he never advances levels in offline mode. There is a quiet 'Skip to reflection (offline / teacher)' button at the bottom of the Plato dialogue — small underlined text, easy to miss unless you're looking for it. If a student needs to move on, click it and confirm. The reflection screen still prints their Iris transcript even without a Plato dialogue.")
 
     h2(doc, 'Differentiation')
     bullet(doc, 'Quick finishers — ask them to write a paragraph linking what they noticed in Round 1 to Round 4. The same skill, different pressures.')
@@ -277,6 +279,19 @@ def build_handover():
     body(doc, "All of Iris's voice and behaviour lives in api/worker.js as IRIS_SYSTEM_PROMPT. All of Plato's lives in PLATO_SYSTEM_PROMPT. Edit, run wrangler deploy, done. Both providers' caches warm on the next call (first call pays full input price; rest hit the cache).")
     body(doc, "The 'KEY EMOTIONAL TRUTHS' blocks under each scenario in IRIS_SYSTEM_PROMPT and the 'PASS criterion' blocks under each level in PLATO_SYSTEM_PROMPT are the most important things to keep accurate. They drive PASS/FAIL decisions.")
     body(doc, "Most likely tuning you'll want after first classroom use: Plato Level 3 (the 'condition' level). If students keep getting stuck there, soften the rubric — currently it requires a substantive condition; you may want to allow 'when checked against the words' as sufficient.")
+
+    h2(doc, 'Accessibility audit — applied fixes (2026-05-11)')
+    body(doc, "Three stress-test agent audits were run against the game. All critical findings are applied. Summary of what was fixed:")
+    bullet(doc, "WCAG AA contrast — darkened --warmth (#b8543c → #a84835, now 4.61:1) and --ink-faint (#8a7e72 → #6a5e52, now 4.6:1). Badge text colours (--pass-text, --fail-text) added for 4.5:1+ on badge backgrounds.")
+    bullet(doc, "Touch targets — footer buttons set to min-height: 44px (WCAG 2.2 AA).")
+    bullet(doc, "Screen reader announcements — announce() calls expanded from 7 to 14+; every screen transition now announces a meaningful status message to the polite live region.")
+    bullet(doc, "Screen transitions — render() removes/retriggers the fade-in class on every screen change so screen-reader and sighted users get consistent timing cues. Plato arrival uses a 400ms heavy fade; concede screen triggers a scale-in on the h2.")
+    bullet(doc, "Priming card forced-read delay — Round 4's heads-up card locks the 'Read on' button for 4 seconds with a live countdown. This is a READING TIME, not decorative — the Siegel hijack pedagogy depends on the priming actually landing before students see Sam's words.")
+    bullet(doc, "Round tracker landmark — changed from <nav> to <div role='group'> (progress pips are not navigation). Added aria-current='step' to the active pip in updateRoundTracker().")
+    bullet(doc, "Iris textarea labelling — <label for='student-response'> now correctly associated (was aria-label on the textarea, which is weaker than a visible label).")
+    bullet(doc, "Word-count regex — both Iris's gate and Plato's hard floor use /\\b\\w+\\b/g. A sequence of spaced emoji or punctuation will not pass the count.")
+    bullet(doc, "Plato skip button — a de-emphasised 'Skip to reflection (offline / teacher)' button sits at the bottom of the Plato dialogue. Visually quiet (small underline link) so engaged students ignore it; present so offline-stuck students or teachers can escape. Requires a browser confirm() to prevent accidental activation.")
+    bullet(doc, "Plato card vignette — inset box-shadow gives the dialogue card 'colder, denser air' than Iris's warm cards.")
 
     h2(doc, 'Known small things')
     bullet(doc, "The round-tracker shows 4 numbered pips + a Greek-π pip for Plato. The π pip activates when entering the Plato challenge, goes dark when Plato concedes.")

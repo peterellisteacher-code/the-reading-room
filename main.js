@@ -260,6 +260,8 @@
       }
       pip.classList.toggle('active', active);
       pip.classList.toggle('done', done);
+      if (active) pip.setAttribute('aria-current', 'step');
+      else pip.removeAttribute('aria-current');
     });
   }
 
@@ -379,20 +381,42 @@
         )
       );
     }
+    // Forced 4-second read delay on the priming card — per stress-test:
+    // the Siegel hijack pedagogy depends on the priming actually landing.
+    // Button is disabled for the first 4s; countdown shows in a small
+    // marginalia under it. Reduced-motion does not relax the delay (this
+    // is a reading time, not an animation).
+    const PRIMING_DELAY_MS = 4000;
+    const continueBtn = el(
+      'button',
+      {
+        type: 'button',
+        class: 'primary',
+        disabled: 'disabled',
+        onClick: () => dispatch({ type: 'CONTINUE_FROM_PRIMING' }),
+      },
+      'Read on'
+    );
+    const countdown = el('div', { class: 'priming-countdown', 'aria-live': 'polite' }, 'Reading time: 4s');
+    let remaining = Math.floor(PRIMING_DELAY_MS / 1000);
+    const tick = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(tick);
+        continueBtn.removeAttribute('disabled');
+        countdown.textContent = 'You can continue when ready.';
+      } else {
+        countdown.textContent = `Reading time: ${remaining}s`;
+      }
+    }, 1000);
+
     return el(
       'section',
       { class: 'card priming-card' },
       el('div', { class: 'round-label warn' }, 'Heads-up'),
       el('p', { class: 'priming-text' }, scenario.priming_text),
-      el(
-        'div',
-        { class: 'button-row' },
-        el(
-          'button',
-          { type: 'button', class: 'primary', onClick: () => dispatch({ type: 'CONTINUE_FROM_PRIMING' }) },
-          'Read on'
-        )
-      )
+      el('div', { class: 'button-row' }, continueBtn),
+      countdown,
     );
   }
 
@@ -444,9 +468,11 @@
       }
       // 40-word minimum gate — added after stress-test showed students
       // submitting 10-word responses and finishing in 17 min.
-      const wordCount = text.trim().split(/\s+/).length;
+      // Word count uses \b\w+\b to count actual alphanumeric word tokens —
+      // a sequence of spaced emoji or punctuation will NOT pass the gate.
+      const wordCount = (text.match(/\b\w+\b/g) || []).length;
       if (wordCount < CONFIG.MIN_RESPONSE_WORDS) {
-        alertNow(`Iris needs more to work with — write at least ${CONFIG.MIN_RESPONSE_WORDS} words. You're at ${wordCount}.`);
+        alertNow(`Iris needs more to work with — try to write ${CONFIG.MIN_RESPONSE_WORDS} words or more. You're at ${wordCount} right now.`);
         return;
       }
       // Persist directly (no extra render), then transition via dispatch.
@@ -463,7 +489,8 @@
         el('summary', null, 'Re-read the text'),
         el('div', { class: 'stimulus' }, scenario.text),
       ),
-      el('p', { class: 'response-prompt' }, scenario.response_prompt),
+      el('label', { for: 'student-response', class: 'sr-label' }, scenario.response_prompt),
+      el('p', { class: 'response-prompt', 'aria-hidden': 'true' }, scenario.response_prompt),
       el(
         'form',
         { class: 'response-form', onSubmit },
@@ -471,7 +498,6 @@
           const ta = el('textarea', {
             id: 'student-response',
             rows: 7,
-            'aria-label': 'Your response',
             placeholder: "Write what you actually think. Specific words from the text are gold.",
             onInput: updateCount,
             maxlength: String(CONFIG.MAX_RESPONSE_CHARS),
@@ -590,14 +616,15 @@
     const updateCounts = () => {
       const v = responseRef.current?.value || '';
       const len = v.length;
-      const words = v.trim() ? v.trim().split(/\s+/).length : 0;
+      // Same emoji-resistant word count as Iris's gate.
+      const words = (v.match(/\b\w+\b/g) || []).length;
       if (charCountRef.current) {
         charCountRef.current.textContent = `${len} / ${CONFIG.MAX_RESPONSE_CHARS}`;
         charCountRef.current.classList.toggle('over', len >= CONFIG.MAX_RESPONSE_CHARS);
       }
       if (wordCountRef.current) {
         wordCountRef.current.textContent = `${words} words`;
-        wordCountRef.current.classList.toggle('ok', words >= 20);
+        wordCountRef.current.classList.toggle('ok', words >= CONFIG.PLATO_SOFT_MIN_WORDS);
       }
     };
 
@@ -609,7 +636,13 @@
         return;
       }
       // Plato accepts shorter responses than Iris (terse philosophical
-      // moves are fine) — keep the gate light, just enforce non-empty.
+      // moves are fine) but enforces a soft floor — one-clause answers
+      // will fail every rubric. Hard floor: 8 words.
+      const words = (text.match(/\b\w+\b/g) || []).length;
+      if (words < CONFIG.PLATO_HARD_MIN_WORDS) {
+        alertNow(`Plato needs more than a phrase. You're at ${words} words — give him a sentence to work with.`);
+        return;
+      }
       state.plato.pendingResponse = text;
       dispatch({ type: 'SUBMIT_PLATO_TURN' });
       requestPlato();
@@ -701,6 +734,29 @@
       }
     }, 0);
 
+    // De-emphasised "skip to reflection" escape. Two purposes:
+    //   1) Offline-fallback rescue: with no Worker deployed, Plato's
+    //      fallback never returns 'concede' and students would otherwise
+    //      be stuck at level 1 forever. Stress-test BLOCKER.
+    //   2) Teacher override during class: if a student needs to move on.
+    // Visually quiet — small underlined link in the bottom-right corner —
+    // so engaged students don't shortcut through, but stuck students can.
+    const skipRow = el('div', { class: 'plato-skip-row' },
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'plato-skip-link',
+          onClick: () => {
+            if (confirm('Skip to the reflection screen? You can come back to Plato by restarting.')) {
+              dispatch({ type: 'GO_TO_REFLECTION' });
+            }
+          },
+        },
+        'Skip to reflection (offline / teacher)'
+      )
+    );
+
     return el(
       'section',
       { class: 'card plato-dialogue-card' },
@@ -708,6 +764,7 @@
       levelPips,
       transcriptEl,
       formBlock,
+      skipRow,
     );
   }
 
@@ -863,16 +920,37 @@
     screen.appendChild(node);
     updateRoundTracker();
 
+    // Retrigger the screen-fade animation on every render. Plato's arrival
+    // (plato_intro) and his concession get a longer, heavier fade — those
+    // are the game's narrative beats. Reduced-motion is respected via the
+    // CSS media query.
+    screen.classList.remove('screen-fade-in', 'plato-arrival', 'plato-arrival-concede');
+    // Force a reflow so the animation retriggers on re-add.
+    void screen.offsetWidth;
+    if (state.screen === 'plato_intro') screen.classList.add('plato-arrival');
+    else if (state.screen === 'plato_concede') screen.classList.add('plato-arrival-concede');
+    else screen.classList.add('screen-fade-in');
+
     // Move focus to the new screen for keyboard / screen-reader users
     screen.focus({ preventScroll: false });
 
-    // Announce screen change politely
-    if (state.screen === 'thinking') announce('Iris is thinking');
-    else if (state.screen === 'feedback') announce(`Round ${ROUND_SEQUENCE[state.roundIdx].round} feedback`);
-    else if (state.screen === 'plato_intro') announce('Plato challenge — five levels');
+    // Announce screen change politely. Per stress-test: ALL transition
+    // screens get an announce so screen-reader users tracking landmarks
+    // know what just happened.
+    const r = ROUND_SEQUENCE[state.roundIdx];
+    const sc = r ? SCENARIOS[r.scenario] : null;
+    if (state.screen === 'title') announce('Title screen — The Reading Room');
+    else if (state.screen === 'intro') announce('Introduction — the Batson experiment');
+    else if (state.screen === 'reveal' && r) announce(`Round ${r.round} of 4 — ${sc.title}`);
+    else if (state.screen === 'priming') announce('Heads-up before round 4 — read carefully');
+    else if (state.screen === 'reading' && r) announce(`Round ${r.round} reading — ${sc.title}`);
+    else if (state.screen === 'response' && r) announce(`Round ${r.round} — write your response`);
+    else if (state.screen === 'thinking') announce('Iris is thinking');
+    else if (state.screen === 'feedback' && r) announce(`Round ${r.round} feedback received`);
+    else if (state.screen === 'plato_intro') announce('Plato has appeared — five levels of challenge ahead');
     else if (state.screen === 'plato_thinking') announce('Plato considers your reply');
-    else if (state.screen === 'plato_dialogue') announce(`Plato level ${state.plato.currentLevel} of 5`);
-    else if (state.screen === 'plato_concede') announce('Plato concedes');
+    else if (state.screen === 'plato_dialogue') announce(`Plato — level ${state.plato.currentLevel} of 5`);
+    else if (state.screen === 'plato_concede') announce('Plato concedes the point');
     else if (state.screen === 'reflection') announce('Reflection screen — workshop complete');
   }
 

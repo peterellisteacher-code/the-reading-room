@@ -8,13 +8,15 @@
   --paper-edge: #e8e0d0;
   --ink: #2a2520;
   --ink-soft: #5a4f44;
-  --ink-faint: #8a7e72;
-  --warmth: #b8543c; /* the lamp colour */
+  --ink-faint: #6a5e52;        /* WCAG AA: darkened from #8a7e72 (was 3.52:1) for 4.6:1 on paper */
+  --warmth: #a84835;           /* WCAG AA: darkened from #b8543c (was 4.27:1) for 4.61:1 on paper */
   --warmth-deep: #8e3e2c;
   --warmth-soft: #d8a895;
   --shadow: rgba(42, 37, 32, 0.12);
-  --pass: #4a7a3e;
-  --fail: #b8543c;
+  --pass: #3d6632;             /* WCAG AA: darkened for 5.4:1 on --pass-bg */
+  --pass-text: #2e4d26;        /* extra-dark for badge text on light bg */
+  --fail: #a84835;             /* matches warmth for visual cohesion, passes contrast */
+  --fail-text: #8e3e2c;        /* 4.9:1 on --fail-bg */
   --pass-bg: #e6f0d9;
   --fail-bg: #f5e0d6;
 
@@ -335,8 +337,8 @@ textarea#student-response:focus-visible {
   letter-spacing: 0.02em;
 }
 
-.badge.pass { background: var(--pass-bg); color: var(--pass); border: 1px solid var(--pass); }
-.badge.fail { background: var(--fail-bg); color: var(--fail); border: 1px solid var(--fail); }
+.badge.pass { background: var(--pass-bg); color: var(--pass-text); border: 1px solid var(--pass); }
+.badge.fail { background: var(--fail-bg); color: var(--fail-text); border: 1px solid var(--fail); }
 .badge.unknown { background: #efe9dc; color: var(--ink-soft); border: 1px solid var(--paper-edge); }
 
 /* ---- Reflection ---- */
@@ -377,8 +379,8 @@ textarea#student-response:focus-visible {
   border-radius: 2px;
 }
 
-.log-badge.pass { background: var(--pass-bg); color: var(--pass); }
-.log-badge.fail { background: var(--fail-bg); color: var(--fail); }
+.log-badge.pass { background: var(--pass-bg); color: var(--pass-text); }
+.log-badge.fail { background: var(--fail-bg); color: var(--fail-text); }
 .log-badge.unknown { background: #efe9dc; color: var(--ink-soft); }
 
 .log-iris {
@@ -443,9 +445,9 @@ footer {
 
 footer button {
   font-size: 0.85rem;
-  padding: 0.4rem 0.9rem;
-  min-height: 36px;
-  color: var(--ink-faint);
+  padding: 0.6rem 0.9rem;
+  min-height: 44px; /* WCAG 2.2 AA — same as main buttons */
+  color: var(--ink-soft);
   border-color: var(--paper-edge);
 }
 
@@ -493,6 +495,36 @@ dialog p {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* ---- Screen transitions ----
+   Generic 150ms fade-in on each screen render, with the Plato arrival
+   getting the heavier 400ms treatment as the game's signature beat.
+   The fade-in class is added by render(); the IIFE removes-then-readds
+   so the animation retriggers on every render. */
+.screen-fade-in { animation: fadeIn 150ms ease-out; }
+
+.plato-arrival, .plato-arrival-concede {
+  animation: fadeInLong 400ms ease-out;
+}
+
+.plato-arrival-concede h2 {
+  animation: scaleInGentle 500ms cubic-bezier(0.16, 1, 0.3, 1) 100ms backwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInLong {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleInGentle {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -568,11 +600,51 @@ button.plato-primary:hover {
   border-color: var(--plato-cold-deep);
 }
 
-/* ---- Plato intro card ---- */
+/* ---- Plato intro + concede cards ---- */
 .plato-intro-card,
 .plato-concede-card {
   background: var(--plato-marble);
   border-left: 4px solid var(--plato-cold);
+  box-shadow: inset 0 0 0 1px rgba(37, 49, 74, 0.08),
+              inset 0 0 32px rgba(37, 49, 74, 0.06);
+}
+
+/* Subtle, de-emphasised "skip to reflection" link on the Plato dialogue —
+   visible enough that an offline-stuck student can find it, quiet enough
+   that students with deployed AI ignore it. */
+.plato-skip-row {
+  text-align: right;
+  margin-top: 0.4rem;
+}
+
+.plato-skip-link {
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0.3rem 0.4rem;
+  min-height: 32px;
+}
+
+.plato-skip-link:hover { color: var(--plato-cold-deep); }
+.plato-skip-link:focus-visible { outline: 2px solid var(--plato-cold); outline-offset: 2px; }
+
+/* Priming-card forced-read delay — disabled button reads dimmer */
+.priming-card button[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.priming-countdown {
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+  margin-top: 0.6rem;
 }
 
 .plato-intro-card h2,
@@ -582,11 +654,16 @@ button.plato-primary:hover {
   letter-spacing: -0.01em;
 }
 
-/* ---- Plato dialogue card ---- */
+/* ---- Plato dialogue card ----
+   Inset vignette gives this card colder, denser air than Iris's warm
+   cards — addresses the "different presence enters" beat. The shadow
+   is a single CSS layer; no asset pipeline involved. */
 .plato-dialogue-card {
   background: var(--plato-marble);
   border-left: 4px solid var(--plato-cold);
   gap: 1rem;
+  box-shadow: inset 0 0 0 1px rgba(37, 49, 74, 0.08),
+              inset 0 0 24px rgba(37, 49, 74, 0.05);
 }
 
 .plato-level-tracker {

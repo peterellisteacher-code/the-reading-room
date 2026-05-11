@@ -195,7 +195,10 @@ USER MESSAGE FORMAT:
 You will receive JSON like:
 { "round": 1, "scenarioId": "s1_katie", "mode": "first_engagement", "response": "<student's free text>" }
 
-Read response, decide PASS or FAIL, write your prose. Output the marker, blank line, prose. No preamble, no sign-off, no apology for being an AI, no meta-comments about the format.`;
+Read response, decide PASS or FAIL, write your prose. Output the marker, blank line, prose. No preamble, no sign-off, no apology for being an AI, no meta-comments about the format.
+
+MULTI-TURN CONVERSATIONS:
+After your initial response, the student may reply to continue the dialogue. Their follow-up arrives as plain text (not JSON) — the JSON context from the first message already told you the scenario. Continue naturally. Still begin every response with [EVIDENCE_CHECK_PASS] or [EVIDENCE_CHECK_FAIL] reflecting whether they are engaging with what the text actually shows. Same 80-word cap. Same warmth and honesty.`;
 
 // ============================================================================
 // PLATO — DeepSeek V4, persuasion gatekeeper across 5 escalating levels
@@ -335,12 +338,35 @@ async function handleIris(body, env, origin) {
   const scenarioId = typeof body.scenarioId === 'string' ? body.scenarioId : null;
   const mode = typeof body.mode === 'string' ? body.mode : 'engaged';
   const response = (typeof body.response === 'string' ? body.response : '').slice(0, MAX_RESPONSE_CHARS);
+  const rawHistory = Array.isArray(body.history) ? body.history : [];
 
   if (round === null || round < 1 || round > 4) return jsonResponse({ error: 'Bad round' }, 400, origin);
   if (!scenarioId || !/^s[0-9]_[a-z]+$/.test(scenarioId)) return jsonResponse({ error: 'Bad scenarioId' }, 400, origin);
   if (!response.trim()) return jsonResponse({ error: 'Empty response' }, 400, origin);
 
-  const userMessage = JSON.stringify({ round, scenarioId, mode, response });
+  // Cap and sanitise history — alternating student/iris turns from the conversation so far.
+  const cleanHistory = rawHistory
+    .filter(h => (h.role === 'student' || h.role === 'iris') && typeof h.content === 'string' && h.content.trim())
+    .slice(-10);
+
+  // Build the Anthropic messages array. First student turn is JSON context; subsequent turns are plain text.
+  const messages = [];
+  if (cleanHistory.length === 0) {
+    messages.push({ role: 'user', content: JSON.stringify({ round, scenarioId, mode, response }) });
+  } else {
+    for (let i = 0; i < cleanHistory.length; i++) {
+      const h = cleanHistory[i];
+      if (h.role === 'student') {
+        messages.push({
+          role: 'user',
+          content: i === 0 ? JSON.stringify({ round, scenarioId, mode, response: h.content }) : h.content,
+        });
+      } else {
+        messages.push({ role: 'assistant', content: h.content });
+      }
+    }
+    messages.push({ role: 'user', content: response });
+  }
 
   let res;
   try {
@@ -355,9 +381,9 @@ async function handleIris(body, env, origin) {
         model: ANTHROPIC_MODEL,
         max_tokens: ANTHROPIC_MAX_TOKENS,
         system: [
-          { type: 'text', text: IRIS_SYSTEM_PROMPT, cache_control: { type: 'ephemeral', ttl: '1h' } },
+          { type: 'text', text: IRIS_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
         ],
-        messages: [{ role: 'user', content: userMessage }],
+        messages,
       }),
     });
   } catch (err) {

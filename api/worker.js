@@ -27,7 +27,7 @@
 // classroom use — see ../api/PLATO_REVIEW_TEMPLATE.md.
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const ANTHROPIC_MODEL = 'claude-haiku-4-5';
+const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001';
 const ANTHROPIC_MAX_TOKENS = 250;
 
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';

@@ -446,6 +446,7 @@
     const scenario = SCENARIOS[round.scenario];
     const responseRef = { current: null };
     const charCountRef = { current: null };
+    const errorRef = { current: null };
 
     // Update char count via direct DOM write — DO NOT dispatch on every keystroke
     // (would re-render and destroy textarea focus/selection).
@@ -455,6 +456,12 @@
         charCountRef.current.textContent = `${len} / ${CONFIG.MAX_RESPONSE_CHARS}`;
         charCountRef.current.classList.toggle('over', len >= CONFIG.MAX_RESPONSE_CHARS);
       }
+      if (errorRef.current) errorRef.current.textContent = '';
+    };
+
+    const showError = (msg) => {
+      if (errorRef.current) errorRef.current.textContent = msg;
+      alertNow(msg);
     };
 
     const onSubmit = (e) => {
@@ -463,7 +470,7 @@
       // been kept in sync (we deliberately don't dispatch on every keystroke).
       const text = (responseRef.current?.value || '').slice(0, CONFIG.MAX_RESPONSE_CHARS);
       if (!text.trim()) {
-        alertNow('Write something first — even a sentence.');
+        showError('Write something first — even a sentence.');
         return;
       }
       // 40-word minimum gate — added after stress-test showed students
@@ -472,7 +479,7 @@
       // a sequence of spaced emoji or punctuation will NOT pass the gate.
       const wordCount = (text.match(/\b\w+\b/g) || []).length;
       if (wordCount < CONFIG.MIN_RESPONSE_WORDS) {
-        alertNow(`Iris needs more to work with — try to write ${CONFIG.MIN_RESPONSE_WORDS} words or more. You're at ${wordCount} right now.`);
+        showError(`Iris needs more to work with — try to write ${CONFIG.MIN_RESPONSE_WORDS} words or more. You're at ${wordCount} right now.`);
         return;
       }
       // Persist directly (no extra render), then transition via dispatch.
@@ -510,6 +517,11 @@
           const cc = el('div', { class: 'char-count', 'aria-live': 'off' }, `0 / ${CONFIG.MAX_RESPONSE_CHARS}`);
           charCountRef.current = cc;
           return cc;
+        })(),
+        (function () {
+          const err = el('div', { class: 'form-error' });
+          errorRef.current = err;
+          return err;
         })(),
         el(
           'div',

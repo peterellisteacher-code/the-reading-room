@@ -256,6 +256,13 @@ textarea#student-response:focus-visible {
 
 .char-count.over { color: var(--warmth-deep); font-weight: 600; }
 
+.form-error {
+  font-family: var(--sans);
+  font-size: 0.875rem;
+  color: var(--warmth-deep);
+  min-height: 1.25rem;
+}
+
 /* ---- Thinking ---- */
 .thinking-card {
   align-items: center;

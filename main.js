@@ -26,12 +26,13 @@
   // ----- State -----
   const state = {
     // 'title' | 'intro' | 'reveal' | 'priming' | 'reading' | 'response' |
-    // 'thinking' | 'feedback' | 'plato_intro' | 'plato_dialogue' |
+    // 'thinking' | 'dialogue' | 'plato_intro' | 'plato_dialogue' |
     // 'plato_thinking' | 'plato_concede' | 'reflection'
     screen: 'title',
     roundIdx: 0,
     studentResponse: '',
     feedback: null, // { evidenceCheck: 'PASS'|'FAIL'|'UNKNOWN', text, fromFallback }
+    irisTranscript: [], // [{ role:'student', content } | { role:'iris', rawText, feedback }]
     log: [], // [{ round, scenario, response, evidenceCheck, irisText, fromFallback }]
     apiHealthy: true,
 
@@ -105,24 +106,35 @@
         state.studentResponse = action.value.slice(0, CONFIG.MAX_RESPONSE_CHARS);
         break;
       case 'SUBMIT_RESPONSE':
+        state.irisTranscript.push({ role: 'student', content: state.studentResponse });
         state.screen = 'thinking';
         break;
-      case 'FEEDBACK_RECEIVED':
-        state.feedback = action.feedback;
-        state.log.push({
-          round: ROUND_SEQUENCE[state.roundIdx].round,
-          scenario: ROUND_SEQUENCE[state.roundIdx].scenario,
-          response: state.studentResponse,
-          evidenceCheck: action.feedback.evidenceCheck,
-          irisText: action.feedback.text,
-          fromFallback: action.feedback.fromFallback,
-        });
-        state.screen = 'feedback';
+      case 'SUBMIT_IRIS_REPLY':
+        state.irisTranscript.push({ role: 'student', content: action.text });
+        state.screen = 'thinking';
         break;
+      case 'FEEDBACK_RECEIVED': {
+        const isFirstIrisTurn = !state.irisTranscript.some(t => t.role === 'iris');
+        state.irisTranscript.push({ role: 'iris', rawText: action.rawText, feedback: action.feedback });
+        state.feedback = action.feedback;
+        if (isFirstIrisTurn) {
+          state.log.push({
+            round: ROUND_SEQUENCE[state.roundIdx].round,
+            scenario: ROUND_SEQUENCE[state.roundIdx].scenario,
+            response: state.studentResponse,
+            evidenceCheck: action.feedback.evidenceCheck,
+            irisText: action.feedback.text,
+            fromFallback: action.feedback.fromFallback,
+          });
+        }
+        state.screen = 'dialogue';
+        break;
+      }
       case 'NEXT_ROUND': {
         state.roundIdx += 1;
         state.studentResponse = '';
         state.feedback = null;
+        state.irisTranscript = [];
         if (state.roundIdx >= ROUND_SEQUENCE.length) {
           // After the four reading rounds → Plato challenge, not reflection yet.
           state.screen = 'plato_intro';
@@ -158,7 +170,6 @@
       case 'PLATO_RESPONSE_RECEIVED': {
         const r = action.response; // { level_passed, next_level, plato_says, hint, fromFallback }
         state.plato.lastResponse = r;
-        // Append Plato's response to the transcript
         state.plato.transcript.push({
           role: 'plato',
           content: r.plato_says,
@@ -166,15 +177,25 @@
           hint: r.hint,
           fromFallback: r.fromFallback,
         });
+        // After PLATO_MAX_TURNS_PER_LEVEL attempts at a level, force advancement
+        // so students can never be permanently stuck (handles offline fallback too).
+        const hitTurnCap = state.plato.turnAtLevel >= PLATO_MAX_TURNS_PER_LEVEL;
         if (r.next_level === 'concede') {
           state.plato.conceded = true;
           state.screen = 'plato_concede';
-        } else {
-          // Advance level if changed
-          if (typeof r.next_level === 'number' && r.next_level !== state.plato.currentLevel) {
-            state.plato.currentLevel = r.next_level;
+        } else if (hitTurnCap) {
+          if (state.plato.currentLevel >= 5) {
+            state.screen = 'reflection';
+          } else {
+            state.plato.currentLevel += 1;
             state.plato.turnAtLevel = 0;
+            state.screen = 'plato_dialogue';
           }
+        } else if (typeof r.next_level === 'number' && r.next_level !== state.plato.currentLevel) {
+          state.plato.currentLevel = r.next_level;
+          state.plato.turnAtLevel = 0;
+          state.screen = 'plato_dialogue';
+        } else {
           state.screen = 'plato_dialogue';
         }
         break;
@@ -183,10 +204,12 @@
         state.screen = 'reflection';
         break;
       case 'RESTART':
+        try { localStorage.removeItem('reading-room-v1'); } catch (_) {}
         state.screen = 'title';
         state.roundIdx = 0;
         state.studentResponse = '';
         state.feedback = null;
+        state.irisTranscript = [];
         state.log = [];
         state.apiHealthy = true;
         state.plato = {
@@ -206,6 +229,104 @@
         return;
     }
     render();
+    saveState();
+  }
+
+  // ----- State persistence -----
+  const STATE_KEY = 'reading-room-v1';
+
+  function saveState() {
+    try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch (_) {}
+  }
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STATE_KEY);
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      if (typeof s.screen === 'string') state.screen = s.screen;
+      if (typeof s.roundIdx === 'number') state.roundIdx = s.roundIdx;
+      if (typeof s.studentResponse === 'string') state.studentResponse = s.studentResponse;
+      if (s.feedback && typeof s.feedback === 'object') state.feedback = s.feedback;
+      if (Array.isArray(s.irisTranscript)) state.irisTranscript = s.irisTranscript;
+      if (Array.isArray(s.log)) state.log = s.log;
+      if (typeof s.apiHealthy === 'boolean') state.apiHealthy = s.apiHealthy;
+      if (s.plato && typeof s.plato === 'object') {
+        Object.assign(state.plato, {
+          currentLevel: typeof s.plato.currentLevel === 'number' ? s.plato.currentLevel : 1,
+          turnAtLevel: typeof s.plato.turnAtLevel === 'number' ? s.plato.turnAtLevel : 0,
+          transcript: Array.isArray(s.plato.transcript) ? s.plato.transcript : [],
+          pendingResponse: typeof s.plato.pendingResponse === 'string' ? s.plato.pendingResponse : '',
+          conceded: typeof s.plato.conceded === 'boolean' ? s.plato.conceded : false,
+          lastResponse: s.plato.lastResponse ?? null,
+        });
+      }
+      // Back up from transient screens that can't be restored meaningfully
+      if (state.screen === 'thinking') {
+        state.screen = state.irisTranscript.some(t => t.role === 'iris') ? 'dialogue' : 'response';
+      } else if (state.screen === 'plato_thinking') {
+        state.screen = 'plato_dialogue';
+      }
+    } catch (_) {}
+  }
+
+  // ----- PDF download -----
+  function downloadPDF() {
+    if (!window.jspdf) { alertNow('PDF library not loaded — refresh and try again.'); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const margin = 20;
+    const maxW = 170;
+    let y = margin;
+    const NL = 6;
+
+    const write = (text, size = 11, style = 'normal', color = [42, 37, 32]) => {
+      doc.setFontSize(size);
+      doc.setFont('helvetica', style);
+      doc.setTextColor(...color);
+      const lines = doc.splitTextToSize(String(text), maxW);
+      if (y + lines.length * NL > 280) { doc.addPage(); y = margin; }
+      doc.text(lines, margin, y);
+      y += lines.length * NL;
+    };
+    const gap = (mm = 4) => { y += mm; };
+
+    write('The Reading Room', 18, 'bold');
+    write('Your reflection — bring this to your next lesson', 11, 'normal', [90, 79, 68]);
+    gap(8);
+
+    state.log.forEach((entry) => {
+      const scenario = SCENARIOS[entry.scenario];
+      write(`Round ${entry.round} — ${scenario.title}`, 12, 'bold');
+      const label = entry.evidenceCheck === 'PASS' ? 'Read what was there'
+                  : entry.evidenceCheck === 'FAIL' ? 'Iris pushed back' : '—';
+      write(label, 9, 'bold', entry.evidenceCheck === 'PASS' ? [46, 77, 38] : [138, 62, 44]);
+      gap(2);
+      write('Your response:', 9, 'bold');
+      write(entry.response, 10);
+      gap(2);
+      write('Iris said:', 9, 'bold');
+      write(entry.irisText, 10);
+      gap(7);
+    });
+
+    if (state.plato.transcript.length > 0) {
+      const header = state.plato.conceded
+        ? 'Your dialogue with Plato — Plato conceded'
+        : `Your dialogue with Plato — reached level ${state.plato.currentLevel} of 5`;
+      write(header, 12, 'bold');
+      gap(3);
+      state.plato.transcript.forEach((turn) => {
+        write(turn.role === 'plato' ? 'PLATO' : 'YOU', 9, 'bold');
+        write(turn.content, 10);
+        if (turn.hint) write(`Hint: ${turn.hint}`, 9, 'normal', [90, 79, 68]);
+        gap(4);
+      });
+    }
+
+    gap(6);
+    write('Send this PDF to your teacher as your evidence of completion.', 10, 'bold', [90, 79, 68]);
+    doc.save('reading-room-reflection.pdf');
   }
 
   // ----- Render helpers -----
@@ -553,6 +674,71 @@
     );
   }
 
+  function renderDialogue() {
+    const round = ROUND_SEQUENCE[state.roundIdx];
+    const scenario = SCENARIOS[round.scenario];
+    const isLast = state.roundIdx >= ROUND_SEQUENCE.length - 1;
+    const replyRef = { current: null };
+    const errorRef = { current: null };
+
+    const showError = (msg) => {
+      if (errorRef.current) errorRef.current.textContent = msg;
+      alertNow(msg);
+    };
+
+    const onReply = (e) => {
+      e.preventDefault();
+      const text = (replyRef.current?.value || '').slice(0, CONFIG.MAX_RESPONSE_CHARS).trim();
+      if (!text) { showError('Write something first.'); return; }
+      if (errorRef.current) errorRef.current.textContent = '';
+      dispatch({ type: 'SUBMIT_IRIS_REPLY', text });
+      requestIris();
+    };
+
+    const transcriptItems = state.irisTranscript.map((turn) => {
+      if (turn.role === 'student') {
+        return el('div', { class: 'iris-turn iris-turn--you' },
+          el('p', { class: 'iris-turn-label' }, 'You'),
+          el('p', { class: 'iris-turn-body' }, turn.content)
+        );
+      }
+      const fb = turn.feedback || {};
+      return el('div', { class: 'iris-turn iris-turn--iris' },
+        el('p', { class: 'iris-name' }, 'Iris'),
+        el('p', { class: 'iris-text' }, fb.text || ''),
+        fb.fromFallback ? el('p', { class: 'aside small' }, '(Iris is offline. The teacher will debrief this round in person.)') : null
+      );
+    });
+
+    return el(
+      'section', { class: 'card dialogue-card' },
+      el('div', { class: 'round-label' }, `Round ${round.round} · ${scenario.title}`),
+      el('div', { class: 'iris-dialogue-transcript' }, ...transcriptItems),
+      el('form', { class: 'response-form', onSubmit: onReply },
+        (function () {
+          const ta = el('textarea', {
+            id: 'iris-reply', rows: 4,
+            placeholder: 'Reply to Iris…',
+            maxlength: String(CONFIG.MAX_RESPONSE_CHARS),
+          });
+          replyRef.current = ta;
+          return ta;
+        })(),
+        (function () {
+          const err = el('div', { class: 'form-error' });
+          errorRef.current = err;
+          return err;
+        })(),
+        el('div', { class: 'button-row' },
+          el('button', { type: 'submit', class: 'primary' }, 'Reply to Iris'),
+          el('button', { type: 'button', onClick: () => dispatch({ type: 'NEXT_ROUND' }) },
+            isLast ? 'See the reflection' : 'Next round'
+          )
+        )
+      )
+    );
+  }
+
   function renderFeedback() {
     const round = ROUND_SEQUENCE[state.roundIdx];
     const fb = state.feedback;
@@ -746,29 +932,6 @@
       }
     }, 0);
 
-    // De-emphasised "skip to reflection" escape. Two purposes:
-    //   1) Offline-fallback rescue: with no Worker deployed, Plato's
-    //      fallback never returns 'concede' and students would otherwise
-    //      be stuck at level 1 forever. Stress-test BLOCKER.
-    //   2) Teacher override during class: if a student needs to move on.
-    // Visually quiet — small underlined link in the bottom-right corner —
-    // so engaged students don't shortcut through, but stuck students can.
-    const skipRow = el('div', { class: 'plato-skip-row' },
-      el(
-        'button',
-        {
-          type: 'button',
-          class: 'plato-skip-link',
-          onClick: () => {
-            if (confirm('Skip to the reflection screen? You can come back to Plato by restarting.')) {
-              dispatch({ type: 'GO_TO_REFLECTION' });
-            }
-          },
-        },
-        'Skip to reflection (offline / teacher)'
-      )
-    );
-
     return el(
       'section',
       { class: 'card plato-dialogue-card' },
@@ -776,7 +939,6 @@
       levelPips,
       transcriptEl,
       formBlock,
-      skipRow,
     );
   }
 
@@ -894,8 +1056,8 @@
         { class: 'button-row' },
         el(
           'button',
-          { type: 'button', class: 'primary', onClick: () => window.print() },
-          'Print this reflection'
+          { type: 'button', class: 'primary', onClick: downloadPDF },
+          'Save as PDF'
         ),
         el(
           'button',
@@ -904,7 +1066,7 @@
         )
       ),
 
-      el('p', { class: 'aside small' }, 'Bring this to the next lesson.'),
+      el('p', { class: 'aside small' }, 'Save the PDF and send it to your teacher as evidence of completion.'),
     );
   }
 
@@ -920,7 +1082,8 @@
       case 'reading': node = renderReading(); break;
       case 'response': node = renderResponse(); break;
       case 'thinking': node = renderThinking(); break;
-      case 'feedback': node = renderFeedback(); break;
+      case 'feedback': // fall-through: treat old saved 'feedback' state as dialogue
+      case 'dialogue': node = renderDialogue(); break;
       case 'plato_intro': node = renderPlatoIntro(); break;
       case 'plato_dialogue': node = renderPlatoDialogue(); break;
       case 'plato_thinking': node = renderPlatoThinking(); break;
@@ -958,7 +1121,7 @@
     else if (state.screen === 'reading' && r) announce(`Round ${r.round} reading — ${sc.title}`);
     else if (state.screen === 'response' && r) announce(`Round ${r.round} — write your response`);
     else if (state.screen === 'thinking') announce('Iris is thinking');
-    else if (state.screen === 'feedback' && r) announce(`Round ${r.round} feedback received`);
+    else if (state.screen === 'dialogue' && r) announce(`Iris replied — round ${r.round}`);
     else if (state.screen === 'plato_intro') announce('Plato has appeared — five levels of challenge ahead');
     else if (state.screen === 'plato_thinking') announce('Plato considers your reply');
     else if (state.screen === 'plato_dialogue') announce(`Plato — level ${state.plato.currentLevel} of 5`);
@@ -969,11 +1132,19 @@
   // ----- Iris API call -----
   async function requestIris() {
     const round = ROUND_SEQUENCE[state.roundIdx];
+    const transcript = state.irisTranscript;
+    const currentTurn = transcript[transcript.length - 1];
+    // History = all turns before the current student turn, with iris turns sent as raw API text
+    const history = transcript.slice(0, -1).map(t => ({
+      role: t.role,
+      content: t.role === 'iris' ? (t.rawText || t.feedback?.text || '') : t.content,
+    }));
     const payload = {
       round: round.round,
       scenarioId: round.scenario,
       mode: round.mode,
-      response: state.studentResponse.slice(0, CONFIG.MAX_RESPONSE_CHARS),
+      response: currentTurn.content.slice(0, CONFIG.MAX_RESPONSE_CHARS),
+      history,
     };
 
     try {
@@ -989,14 +1160,16 @@
 
       if (!res.ok) throw new Error('Proxy returned ' + res.status);
       const data = await res.json();
-      const parsed = parseIrisResponse(data.text || '');
-      dispatch({ type: 'FEEDBACK_RECEIVED', feedback: { ...parsed, fromFallback: false } });
+      const rawText = data.text || '';
+      const parsed = parseIrisResponse(rawText);
+      dispatch({ type: 'FEEDBACK_RECEIVED', feedback: { ...parsed, fromFallback: false }, rawText });
     } catch (err) {
       console.warn('Iris call failed, using fallback:', err);
       const fallbackText = FALLBACK_MESSAGES[round.scenario] || FALLBACK_MESSAGES._generic;
       dispatch({
         type: 'FEEDBACK_RECEIVED',
         feedback: { evidenceCheck: 'UNKNOWN', text: fallbackText, fromFallback: true },
+        rawText: fallbackText,
       });
       if (CONFIG.SHOW_OFFLINE_BANNER && state.apiHealthy) dispatch({ type: 'API_DOWN' });
     }
@@ -1087,5 +1260,6 @@
   });
 
   // ----- Initial render -----
+  loadState();
   render();
 })();

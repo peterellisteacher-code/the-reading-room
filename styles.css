@@ -263,6 +263,46 @@ textarea#student-response:focus-visible {
   min-height: 1.25rem;
 }
 
+/* ---- Iris dialogue (multi-turn conversation) ---- */
+.iris-dialogue-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.iris-turn {
+  padding: 0.65rem 0.9rem;
+  border-radius: var(--radius);
+}
+
+.iris-turn--you {
+  background: #efe9dc;
+  border-left: 3px solid var(--paper-edge);
+}
+
+.iris-turn--iris {
+  background: #fff9f7;
+  border-left: 3px solid var(--warmth-soft);
+}
+
+.iris-turn-label {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  margin: 0 0 0.2rem;
+}
+
+.iris-turn-body {
+  font-family: var(--serif);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--ink);
+  margin: 0;
+}
+
 /* ---- Thinking ---- */
 .thinking-card {
   align-items: center;
